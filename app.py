@@ -40,48 +40,35 @@ with st.sidebar:
 
     tasa_igv      = st.number_input("Tasa IGV (%)",        value=19.0, key="_meta_tasa_igv_w") / 100 if hay_igv else 0.0
     igv_diferido  = st.toggle("¿IGV diferido un año?", value=False, key="_meta_igv_diferido",
-                              help="El # ── GUARDAR / CARGAR ─────────────────────────────────────────
-st.divider()
-st.subheader("💾 Guardar / Cargar")
-
-# Inicializar estado para configuración cargada
-if "config_data" not in st.session_state:
-    st.session_state.config_data = None
-
-archivo_cargado = st.file_uploader("📂 Cargar configuración (.json)", type=["json"])
-if archivo_cargado is not None:
-    try:
-        datos = json.load(archivo_cargado)
-        st.session_state.config_data = datos
-        st.success("✅ Archivo cargado. Haz clic en 'Aplicar' para usarlo.")
-    except Exception as e:
-        st.error(f"Error: {e}")
-
-# Botón para aplicar la configuración
-if st.session_state.config_data is not None:
-    if st.button("📥 Aplicar configuración (recargará la página)"):
-        # Guardar en session_state
-        for k, v in st.session_state.config_data.items():
-            st.session_state[k] = v
-        # Limpiar para no aplicar dos veces
-        st.session_state.config_data = None
-        # Forzar recarga
-        st.rerun()
-
-# Botón para guardar
-if st.button("💾 Guardar configuración actual"):
-    prefijos = ("prod_", "act_", "cost_", "cc_", "_meta_")
-    config = {}
-    for k, v in st.session_state.items():
-        if any(k.startswith(p) for p in prefijos) and isinstance(v, (int, float, str, bool)):
-            config[k] = v
-    buf_j = io.BytesIO(json.dumps(config, ensure_ascii=False, indent=2).encode())
-    st.download_button("⬇️ Descargar .json", data=buf_j,
-                       file_name=f"{nombre_proyecto.replace(' ','_')}_config.json",
-                       mime="application/json", key="dl_config")crédito fiscal de egresos se reconoce un año después del pago") if hay_igv else False
+                              help="El crédito fiscal de egresos se reconoce un año después del pago") if hay_igv else False
     tasa_isc   = st.number_input("Tasa ISC (%)",        value=20.0, key="_meta_tasa_isc_w") / 100 if hay_isc   else 0.0
     inflacion  = st.number_input("Inflación anual (%)", value=40.0, key="_meta_inflacion_w") / 100 if hay_inflacion else 0.0
 
+    # Guardar / Cargar
+    st.divider()
+    st.subheader("Guardar / Cargar")
+
+    archivo_cargado = st.file_uploader("Cargar configuracion (.json)", type=["json"])
+    if archivo_cargado is not None:
+        try:
+            datos = json.load(archivo_cargado)
+            for k, v in datos.items():
+                if k in st.session_state:
+                    st.session_state[k] = v
+            st.success("Configuracion cargada. Recarga la pagina para aplicar cambios.")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    if st.button("Guardar configuracion actual"):
+        prefijos = ("prod_", "act_", "cost_", "cc_", "_meta_")
+        config = {}
+        for k, v in st.session_state.items():
+            if any(k.startswith(p) for p in prefijos) and isinstance(v, (int, float, str, bool)):
+                config[k] = v
+        buf_j = io.BytesIO(json.dumps(config, ensure_ascii=False, indent=2).encode())
+        st.download_button("Descargar .json", data=buf_j,
+                           file_name=f"{nombre_proyecto.replace(' ','_')}_config.json",
+                           mime="application/json", key="dl_config")
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
