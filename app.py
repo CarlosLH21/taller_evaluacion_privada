@@ -470,37 +470,55 @@ with tab3:
         st.info("No hay financiamiento externo en este proyecto.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — RESULTADOS (Flujo de Caja) - FORMATO 100% FIEL AL LIBRO
+# TAB 4 — RESULTADOS (Flujo de Caja) - VERSIÓN CORREGIDA
 # ══════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.subheader("6. Flujo de Caja")
     
     # =========================================================================
-    # 1. CALCULAR IR DEL FCE (FÓRMULA ESPECIAL PARA ISC SEGÚN LIBRO)
+    # 1. ASEGURAR QUE TODAS LAS VARIABLES EXISTEN
+    # =========================================================================
+    
+    # Asegurar que ingresos_con_isc existe
+    if 'ingresos_con_isc' not in dir():
+        ingresos_con_isc = [0.0] * n
+    
+    # Asegurar que pago_igv existe
+    if hay_igv and 'pago_igv' not in dir():
+        pago_igv = [0.0] * (n + 2)
+    elif not hay_igv:
+        pago_igv = [0.0] * (n + 2)
+    
+    # Asegurar que ffn_real existe
+    if hay_financiamiento and 'ffn_real' not in dir():
+        ffn_real = [0.0] * (n + 1)
+    elif not hay_financiamiento:
+        ffn_real = [0.0] * (n + 1)
+    
+    # Asegurar que escudo_real existe
+    if hay_financiamiento and 'escudo_real' not in dir():
+        escudo_real = [0.0] * n
+    elif not hay_financiamiento:
+        escudo_real = [0.0] * n
+    
+    # Asegurar que intereses_reales existe
+    if hay_financiamiento and 'intereses_reales' not in dir():
+        intereses_reales = [0.0] * n
+    elif not hay_financiamiento:
+        intereses_reales = [0.0] * n
+    
+    # =========================================================================
+    # 2. CALCULAR IR DEL FCE
     # =========================================================================
     
     if hay_isc:
-        # Fórmula del libro: (A/1.39 + Planillas + Insumos/1.19 - Depreciación) * 0.3
-        # Donde:
-        # - A/1.39 = ingresos sin IGV ni ISC = ingresos_sin_igv_efectivos
-        # - Planillas = costos que NO tienen IGV (el usuario define cuáles)
-        # - Insumos/1.19 = costos que SÍ tienen IGV, dividido 1.19
-        
-        # Separamos costos con y sin IGV
-        costos_con_igv_base = []   # insumos sin IGV
-        costos_sin_igv_base = []   # planillas y otros sin IGV
-        
-        # Por ahora, usamos la estructura simple: asumimos que todos los costos operativos
-        # son la suma de planillas (sin IGV) + insumos (con IGV)
-        # El usuario debe ingresar los costos correctamente
-        
         ir_fce, base_fce = calcular_ir_fce(
             n, 
-            ingresos_sin_igv_efectivos,  # A/1.39
-            costos_sin_igv,               # ya incluye planillas e insumos sin IGV
+            ingresos_sin_igv_efectivos,
+            costos_sin_igv,
             dep_por_periodo, 
             tasa_ir, 
-            permite_perdidas=False        # El libro NO acumula pérdidas
+            permite_perdidas=False
         )
     else:
         ir_fce, base_fce = calcular_ir_fce(
@@ -508,7 +526,7 @@ with tab4:
             dep_por_periodo, tasa_ir, permite_perdidas
         )
     
-    # Si hay financiamiento, ajustar IR por escudo tributario
+    # Ajuste por escudo tributario si hay financiamiento
     if hay_financiamiento:
         pyg_data = calcular_pyg(
             n, ingresos_sin_igv_efectivos, costos_sin_igv,
@@ -518,169 +536,219 @@ with tab4:
         ir_fce = [ir_pyg[t] - escudo_real[t] for t in range(n)]
     
     # =========================================================================
-    # 2. CONSTRUIR CADA FILA SEGÚN EL LIBRO
+    # 3. FUNCIÓN DE FORMATEO
     # =========================================================================
     
     def fmt(v):
-        """Formatea número como en el libro: vacío si es 0, con comas y sin decimales"""
         if abs(v) < 0.5:
             return ""
         return f"{v:,.0f}"
     
-    # ----- A. FC ingresos (incluye IGV + ISC) -----
+    # =========================================================================
+    # 4. CONSTRUIR FILA A: FC INGRESOS
+    # =========================================================================
+    
     if hay_isc:
-        A = ingresos_fc[:]                    # Ya incluye IGV+ISC
+        A = ingresos_fc[:n]
     elif hay_igv:
-        A = ingresos_con_igv[:]
+        A = ingresos_con_igv[:n]
     else:
-        A = ingresos_sin_igv_efectivos[:]
+        A = ingresos_sin_igv_efectivos[:n]
     
-    # Para liquidación: el libro muestra -830 (IGV de la venta de maquinaria)
-    A_liq = -(liq_con_igv - liq_sin_igv) if hay_igv else 0.0  # Solo el IGV de la venta
+    # Asegurar longitud n
+    while len(A) < n:
+        A.append(0.0)
     
-    # ----- B. FC de inversión y liquidación (DESGLOSADO como en el libro) -----
+    # IGV de la venta de maquinaria en liquidación
+    A_liq = -(liq_con_igv - liq_sin_igv) if hay_igv else 0.0
+    
+    # =========================================================================
+    # 5. CONSTRUIR FILA B: INVERSIÓN Y LIQUIDACIÓN (CON DESGLOSE)
+    # =========================================================================
+    
     # B1. Maquinaria
     maq_inv_0 = -(inv_con_igv_p0 if hay_igv else inv_sin_igv_p0)
     maq_liq = (liq_con_igv if hay_igv else liq_sin_igv)
     
-    # B2. Instalación de maquinaria (cuotas)
-    instalacion = [-inv_adicional.get(t, 0.0) for t in range(n)]
+    # B2. Instalación (inversiones adicionales en años operativos)
+    instalacion = []
+    for t in range(n):
+        val = -inv_adicional.get(t, 0.0)
+        instalacion.append(val)
     
-    # B3. Cambio en capital de trabajo
-    KL_0 = cambios_kl_lista[0]
-    KL_operativos = [cambios_kl_lista[t+1] if t+1 < len(cambios_kl_lista) else 0.0 for t in range(n)]
+    # B3. Capital de trabajo
+    KL_0 = cambios_kl_lista[0] if len(cambios_kl_lista) > 0 else 0.0
+    KL_operativos = []
+    for t in range(n):
+        val = cambios_kl_lista[t+1] if t+1 < len(cambios_kl_lista) else 0.0
+        KL_operativos.append(val)
     KL_liq = kl_recuperado
     
-    # Total B por período
+    # Total B
     B_0 = maq_inv_0 + KL_0
-    B_operativos = [instalacion[t] + KL_operativos[t] for t in range(n)]
+    B_operativos = []
+    for t in range(n):
+        B_operativos.append(instalacion[t] + KL_operativos[t])
     B_liq = maq_liq + KL_liq
     
-    # ----- C. FC de costos (con IGV) -----
+    # =========================================================================
+    # 6. CONSTRUIR FILA C: FC COSTOS
+    # =========================================================================
+    
     if hay_igv:
-        C = costos_con_igv[:]
+        C = costos_con_igv[:n]
     else:
-        C = costos_sin_igv[:]
+        C = costos_sin_igv[:n]
     
-    # Opcional: desglose de Planillas e Insumos (como en el libro)
-    # El usuario debe haberlos definido como costos separados
+    while len(C) < n:
+        C.append(0.0)
     
-    # ----- D. Pago de IGV -----
+    # =========================================================================
+    # 7. CONSTRUIR FILA D: PAGO IGV
+    # =========================================================================
+    
     if hay_igv:
         D_0 = pago_igv[0] if len(pago_igv) > 0 else 0.0
-        D_operativos = [pago_igv[t+1] if t+1 < len(pago_igv) else 0.0 for t in range(n)]
+        D_operativos = []
+        for t in range(n):
+            val = pago_igv[t+1] if t+1 < len(pago_igv) else 0.0
+            D_operativos.append(val)
         D_liq = pago_igv[-1] if len(pago_igv) > n+1 else 0.0
     else:
-        D_0 = D_operativos = D_liq = 0.0
+        D_0 = 0.0
+        D_operativos = [0.0] * n
+        D_liq = 0.0
     
-    # ----- E. Pago de ISC -----
+    # =========================================================================
+    # 8. CONSTRUIR FILA E: PAGO ISC
+    # =========================================================================
+    
     if hay_isc:
-        E_operativos = [-ingresos_con_isc[t] for t in range(n)]
         E_0 = 0.0
+        E_operativos = []
+        for t in range(n):
+            val = -ingresos_con_isc[t] if t < len(ingresos_con_isc) else 0.0
+            E_operativos.append(val)
         E_liq = 0.0
     else:
-        E_0 = E_operativos = E_liq = 0.0
+        E_0 = 0.0
+        E_operativos = [0.0] * n
+        E_liq = 0.0
     
-    # ----- F. Impuesto a la renta (FCE) -----
+    # =========================================================================
+    # 9. CONSTRUIR FILA F: IMPUESTO A LA RENTA
+    # =========================================================================
+    
     F_0 = 0.0
-    F_operativos = ir_fce[:]
-    # IR por venta de activo en liquidación (si hay utilidad)
-    utilidad_liq = liq_sin_igv - sum(a.get("valor", 0) for a in activos if a.get("deprecia", False))
+    F_operativos = []
+    for t in range(n):
+        val = ir_fce[t] if t < len(ir_fce) else 0.0
+        F_operativos.append(val)
+    
+    # IR por venta de activo en liquidación
+    utilidad_liq = liq_sin_igv
+    for a in activos:
+        if a.get("deprecia", False):
+            valor_libros = a.get("valor_dep", a.get("valor", 0))
+            utilidad_liq -= valor_libros
     F_liq = -tasa_ir * max(utilidad_liq, 0.0) if utilidad_liq > 0 else 0.0
     
-    # ----- G. Flujo de caja económico (FCE = A + B + C + D + E + F) -----
+    # =========================================================================
+    # 10. CONSTRUIR FILA G: FCE
+    # =========================================================================
+    
     G_0 = B_0 + D_0 + E_0 + F_0
-    G_operativos = [A[t] + B_operativos[t] + C[t] + D_operativos[t] + E_operativos[t] + F_operativos[t] for t in range(n)]
+    G_operativos = []
+    for t in range(n):
+        g = A[t] + B_operativos[t] + C[t] + D_operativos[t] + E_operativos[t] + F_operativos[t]
+        G_operativos.append(g)
     G_liq = A_liq + B_liq + D_liq + E_liq + F_liq
     
-    # ----- H. FC financiamiento neto -----
+    # =========================================================================
+    # 11. CONSTRUIR FILA H: FC FINANCIAMIENTO NETO
+    # =========================================================================
+    
     if hay_financiamiento:
         H_0 = ffn_real[0] if len(ffn_real) > 0 else 0.0
-        H_operativos = [ffn_real[t+1] if t+1 < len(ffn_real) else 0.0 for t in range(n)]
-        H_liq = 0.0  # El libro no tiene financiamiento en liquidación
+        H_operativos = []
+        for t in range(n):
+            val = ffn_real[t+1] if t+1 < len(ffn_real) else 0.0
+            H_operativos.append(val)
+        H_liq = 0.0
     else:
-        H_0 = H_operativos = H_liq = 0.0
+        H_0 = 0.0
+        H_operativos = [0.0] * n
+        H_liq = 0.0
     
-    # ----- I. Flujo de caja financiero (FCF = G + H) -----
+    # =========================================================================
+    # 12. CONSTRUIR FILA I: FCF
+    # =========================================================================
+    
     I_0 = G_0 + H_0
-    I_operativos = [G_operativos[t] + H_operativos[t] for t in range(n)]
+    I_operativos = []
+    for t in range(n):
+        I_operativos.append(G_operativos[t] + H_operativos[t])
     I_liq = G_liq + H_liq
     
     # =========================================================================
-    # 3. ARMAR LA TABLA COMPLETA (CON DESGLOSE DE FILA B)
+    # 13. ARMAR TABLA
     # =========================================================================
     
-    # Determinar columnas según número de períodos
+    # Definir columnas
     if n == 3:
         col_names = ["", "0", "1", "2", "3", "Liq."]
-        idx_map = {0: 1, 1: 2, 2: 3}  # t operativo -> columna
-    elif n == 4:
-        col_names = ["", "0", "1", "2", "3", "4", "Liq."]
-        idx_map = {0: 1, 1: 2, 2: 3, 3: 4}
     else:
         col_names = ["", "0"] + [str(i+1) for i in range(n)] + ["Liq."]
-        idx_map = {i: i+1 for i in range(n)}
     
-    # Función para obtener valor en columna correcta
-    def col_val(val_0, val_op_list, val_liq, t=None):
-        if t is None:
-            # Retorna lista completa para una fila
-            row = [fmt(val_0)]
-            for i in range(n):
-                row.append(fmt(val_op_list[i] if i < len(val_op_list) else 0.0))
-            row.append(fmt(val_liq))
-            return row
-        else:
-            # Retorna valor específico
-            if t == -1: return fmt(val_0)
-            if t == n: return fmt(val_liq)
-            return fmt(val_op_list[t] if t < len(val_op_list) else 0.0)
+    def col_row(val_0, val_list, val_liq):
+        row = [fmt(val_0)]
+        for i in range(n):
+            row.append(fmt(val_list[i] if i < len(val_list) else 0.0))
+        row.append(fmt(val_liq))
+        return row
     
     # Construir filas
     filas = []
     
-    # Fila A
-    filas.append(["A. FC ingresos (12)"] + col_val(0.0, A, A_liq))
+    # A
+    filas.append(["A. FC ingresos (12)"] + col_row(0.0, A, A_liq))
     
-    # Fila B con desglose (como en el libro)
-    filas.append(["B. FC de inversión y liquidación"] + col_val(B_0, B_operativos, B_liq))
-    filas.append(["  Maquinaria (13)"] + col_val(maq_inv_0, [0.0]*n, maq_liq))
-    filas.append(["  Instalación de maquinaria (13)"] + col_val(0.0, instalacion, 0.0))
-    filas.append(["  Cambio en capital de trabajo"] + col_val(KL_0, KL_operativos, KL_liq))
+    # B con desglose
+    filas.append(["B. FC de inversión y liquidación"] + col_row(B_0, B_operativos, B_liq))
+    filas.append(["  Maquinaria (13)"] + col_row(maq_inv_0, [0.0]*n, maq_liq))
+    filas.append(["  Instalación de maquinaria (13)"] + col_row(0.0, instalacion, 0.0))
+    filas.append(["  Cambio en capital de trabajo"] + col_row(KL_0, KL_operativos, KL_liq))
     
-    # Fila C
-    filas.append(["C. FC de costos"] + col_val(0.0, C, 0.0))
+    # C
+    filas.append(["C. FC de costos"] + col_row(0.0, C, 0.0))
     
-    # Opcional: desglose de costos si el usuario quiere
-    # (se puede activar con un checkbox)
-    
-    # Fila D
+    # D
     if hay_igv:
-        filas.append(["D. Pago de IGV"] + col_val(D_0, D_operativos, D_liq))
+        filas.append(["D. Pago de IGV"] + col_row(D_0, D_operativos, D_liq))
     
-    # Fila E
+    # E
     if hay_isc:
-        filas.append(["E. Pago de ISC"] + col_val(E_0, E_operativos, E_liq))
+        filas.append(["E. Pago de ISC"] + col_row(E_0, E_operativos, E_liq))
     
-    # Fila F
-    filas.append(["F. Impuesto a la renta (14)"] + col_val(F_0, F_operativos, F_liq))
+    # F
+    filas.append(["F. Impuesto a la renta (14)"] + col_row(F_0, F_operativos, F_liq))
     
-    # Fila G (FCE)
-    filas.append(["G. Flujo de caja económico (15)"] + col_val(G_0, G_operativos, G_liq))
+    # G
+    filas.append(["G. Flujo de caja económico (15)"] + col_row(G_0, G_operativos, G_liq))
     
-    # Fila H
+    # H
     if hay_financiamiento:
-        filas.append(["H. FC financiamiento neto"] + col_val(H_0, H_operativos, H_liq))
+        filas.append(["H. FC financiamiento neto"] + col_row(H_0, H_operativos, H_liq))
     
-    # Fila I (FCF)
-    filas.append(["I. Flujo de caja financiero (16)"] + col_val(I_0, I_operativos, I_liq))
+    # I
+    filas.append(["I. Flujo de caja financiero (16)"] + col_row(I_0, I_operativos, I_liq))
     
-    # Crear DataFrame y mostrar
+    # Mostrar tabla
     df_fc = pd.DataFrame(filas, columns=col_names[:len(filas[0])])
     st.dataframe(df_fc, use_container_width=True, hide_index=True)
     
     # =========================================================================
-    # 4. NOTAS AL PIE (COMO EN EL LIBRO)
+    # 14. NOTAS AL PIE
     # =========================================================================
     st.divider()
     st.caption("(12) Incluye IGV e ISC.")
@@ -691,6 +759,32 @@ with tab4:
     st.caption("(15) G = A + B + C + D" + (" + E" if hay_isc else "") + " + F.")
     st.caption("(16) I = G + H.")
     
+    # =========================================================================
+    # 15. INDICADORES
+    # =========================================================================
+    st.divider()
+    st.subheader("📌 Indicadores")
+    
+    fce_total = [G_0] + G_operativos + [G_liq]
+    fcf_total = [I_0] + I_operativos + [I_liq]
+    
+    van_fce = calcular_van(fce_total, tasa_descuento)
+    van_fcf = calcular_van(fcf_total, tasa_descuento)
+    
+    try:
+        tir_fce = calcular_tir(fce_total) * 100
+    except:
+        tir_fce = float("nan")
+    try:
+        tir_fcf = calcular_tir(fcf_total) * 100
+    except:
+        tir_fcf = float("nan")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1: st.metric("VAN (FCE)", f"{van_fce:,.2f}")
+    with col2: st.metric("TIR (FCE)", f"{tir_fce:.2f}%")
+    with col3: st.metric("VAN (FCF)", f"{van_fcf:,.2f}")
+    with col4: st.metric("TIR (FCF)", f"{tir_fcf:.2f}%")
     # =========================================================================
     # 5. INDICADORES VAN / TIR
     # =========================================================================
